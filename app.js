@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const koneksi = require('./config/database');
+const sql = require('./config/database'); // Assuming your MSSQL config is in the same file
 const NodeCache = require('node-cache');
 
 const myCache = new NodeCache({ stdTTL: 600, checkperiod: 120 }); // Cache TTL of 10 minutes
@@ -13,137 +13,122 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-// set body parser
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
-
-//---------------------------------API HISTORY---------------------------------//
 // read data / get data
+app.get('/api/userlog', (req, res) => {
+    const { rfid } = req.query;
+
+    if (!rfid) {
+        return res.status(400).json({ message: 'Parameter rfid diperlukan' });
+    }
+
+    const querySql = 'SELECT * FROM users WHERE rfid = @rfid';
+
+    sql.connect().then(pool => {
+        return pool.request()
+            .input('rfid', sql.VarChar, rfid)
+            .query(querySql);
+    }).then(result => {
+        res.status(200).json({ success: true, data: result.recordset });
+    }).catch(err => {
+        res.status(500).json({ message: 'Ada kesalahan', error: err });
+    });
+});
+
+// API HISTORY
 app.get('/api/spms_trans', (req, res) => {
-    // Ambil parameter status dari query string
     const { status } = req.query;
 
-    // Pastikan status diberikan
     if (!status) {
         return res.status(400).json({ message: 'Parameter status diperlukan' });
     }
 
-    // Buat query SQL dengan parameter status
-    const querySql = 'SELECT * FROM spms_transaction WHERE status = ?';
+    const querySql = 'SELECT * FROM sparepart_management_history_sparepart_transaction WHERE status = @status';
 
-    // Jalankan query dengan parameter status
-    koneksi.query(querySql, [status], (err, rows, field) => {
-        // Error handling
-        if (err) {
-            return res.status(500).json({ message: 'Ada kesalahan', error: err });
-        }
-
-        // Jika request berhasil
-        res.status(200).json({ success: true, data: rows });
+    sql.connect().then(pool => {
+        return pool.request()
+            .input('status', sql.VarChar, status)
+            .query(querySql);
+    }).then(result => {
+        res.status(200).json({ success: true, data: result.recordset });
+    }).catch(err => {
+        res.status(500).json({ message: 'Ada kesalahan', error: err });
     });
 });
 
-
 app.post('/api/spms_trans', (req, res) => {
-    // buat variabel penampung data dan query sql
     const cacheKey = 'lowStock';
     const cachedData = myCache.get(cacheKey);
 
-    const data = { ...req.body };
-    const querySql = 'INSERT INTO spms_transaction SET ?';
+    const data = req.body;
+    const querySql = 'INSERT INTO sparepart_management_history_sparepart_transaction (field1, field2, ...) VALUES (@field1, @field2, ...)';
 
     if (cachedData) {
         return res.status(200).json({ success: true, data: cachedData });
     } else {
-    // jalankan query
-        koneksi.query(querySql, data, (err, rows, field) => {
-            // error handling
-            if (err) {
-                return res.status(500).json({ message: 'Gagal insert data!', error: err });
+        sql.connect().then(pool => {
+            const request = pool.request();
+            for (let key in data) {
+                request.input(key, sql.VarChar, data[key]);
             }
-
-            myCache.set(cacheKey, rows); // Cache the result
-            // jika request berhasil
+            return request.query(querySql);
+        }).then(result => {
+            myCache.set(cacheKey, result);
             res.status(201).json({ success: true, message: 'Berhasil insert data!' });
+        }).catch(err => {
+            res.status(500).json({ message: 'Gagal insert data!', error: err });
         });
     }
 });
 
-app.post('/api/spms_trans', (req, res) => {
-    // buat variabel penampung data dan query sql
-    const data = { ...req.body };
-    const querySql = 'INSERT INTO spms_transaction SET ?';
-
-    // jalankan query
-    koneksi.query(querySql, data, (err, rows, field) => {
-        // error handling
-        if (err) {
-            return res.status(500).json({ message: 'Gagal insert data!', error: err });
-        }
-
-        // jika request berhasil
-        res.status(201).json({ success: true, message: 'Berhasil insert data!' });
-    });
-});
-
-//---------------------------------API SPAREPART ALL---------------------------------//
-// create data / insert data
+// API SPAREPART ALL
 app.post('/api/spms', (req, res) => {
-    // buat variabel penampung data dan query sql
-    const data = { ...req.body };
-    const querySql = 'INSERT INTO sparepart SET ?';
+    const data = req.body;
+    const querySql = 'INSERT INTO SparepartPlant5 (field1, field2, ...) VALUES (@field1, @field2, ...)';
 
-    // jalankan query
-    koneksi.query(querySql, data, (err, rows, field) => {
-        // error handling
-        if (err) {
-            return res.status(500).json({ message: 'Gagal insert data!', error: err });
+    sql.connect().then(pool => {
+        const request = pool.request();
+        for (let key in data) {
+            request.input(key, sql.VarChar, data[key]);
         }
-
-        // jika request berhasil
+        return request.query(querySql);
+    }).then(result => {
         res.status(201).json({ success: true, message: 'Berhasil insert data!' });
+    }).catch(err => {
+        res.status(500).json({ message: 'Gagal insert data!', error: err });
     });
 });
 
-// read data low-stock data
 app.get('/api/low-stock', (req, res) => {
-    // buat query sql
-    const querySql = 'SELECT * FROM sparepart where Qty < SafetyStock';
+    const querySql = 'SELECT * FROM SparepartPlant5 WHERE Qty < SafetyStock';
 
-    // jalankan query
-    koneksi.query(querySql, (err, rows, field) => {
-        // error handling
-        if (err) {
-            return res.status(500).json({ message: 'Ada kesalahan', error: err });
-        }
-
-        // jika request berhasil
-        res.status(200).json({ success: true, data: rows });
+    sql.connect().then(pool => {
+        return pool.request().query(querySql);
+    }).then(result => {
+        res.status(200).json({ success: true, data: result.recordset });
+    }).catch(err => {
+        res.status(500).json({ message: 'Ada kesalahan', error: err });
     });
 });
 
-// read specific data itemnumber
 app.get('/api/spms-req/:ItemNumber', (req, res) => {
     const itemNumber = req.params.ItemNumber;
-    const querySearch = 'SELECT * FROM sparepart WHERE ProductName = ?';
-    
-    // jalankan query untuk melakukan pencarian data
-    koneksi.query(querySearch, [itemNumber], (err, rows, field) => {
-        // error handling
-        if (err) {
-            return res.status(500).json({ message: 'Ada kesalahan', error: err });
-        }
+    const querySearch = 'SELECT * FROM SparepartPlant5 WHERE ProductName = @itemNumber';
 
-        if (rows.length > 0) {
-            res.status(200).json({ success: true, data: rows, message: 'Berhasil searching data!' });
+    sql.connect().then(pool => {
+        return pool.request()
+            .input('itemNumber', sql.VarChar, itemNumber)
+            .query(querySearch);
+    }).then(result => {
+        if (result.recordset.length > 0) {
+            res.status(200).json({ success: true, data: result.recordset, message: 'Berhasil searching data!' });
         } else {
             res.status(404).json({ success: false, message: 'Data tidak ditemukan' });
         }
+    }).catch(err => {
+        res.status(500).json({ message: 'Ada kesalahan', error: err });
     });
 });
 
-
-// read data / get data
 app.get('/api/spms', (req, res) => {
     const cacheKey = 'sparepartData';
     const cachedData = myCache.get(cacheKey);
@@ -151,84 +136,69 @@ app.get('/api/spms', (req, res) => {
     if (cachedData) {
         return res.status(200).json({ success: true, data: cachedData });
     } else {
-        const querySql = 'SELECT * FROM sparepart';
-        
-        koneksi.query(querySql, (err, rows, field) => {
-            if (err) {
-                return res.status(500).json({ message: 'Ada kesalahan', error: err });
-            }
-            
-            myCache.set(cacheKey, rows); // Cache the result
-            res.status(200).json({ success: true, data: rows });
+        const querySql = 'SELECT * FROM SparepartPlant5';
+
+        sql.connect().then(pool => {
+            return pool.request().query(querySql);
+        }).then(result => {
+            myCache.set(cacheKey, result.recordset);
+            res.status(200).json({ success: true, data: result.recordset });
+        }).catch(err => {
+            res.status(500).json({ message: 'Ada kesalahan', error: err });
         });
     }
 });
 
-// update data
 app.put('/api/spms/:ItemNumber', (req, res) => {
+    const data = req.body;
+    const itemNumber = req.params.ItemNumber;
+    const querySearch = 'SELECT * FROM SparepartPlant5 WHERE ItemNumber = @itemNumber';
+    const queryUpdate = 'UPDATE SparepartPlant5 SET field1 = @field1, field2 = @field2, ... WHERE ItemNumber = @itemNumber';
 
-    console.log(req.params.ItemNumber);
-    // buat variabel penampung data dan query sql
-    const data = { ...req.body };
-    const querySearch = 'SELECT * FROM sparepart WHERE ItemNumber = ?';
-    const queryUpdate = 'UPDATE sparepart SET ? WHERE ItemNumber = ?';
-    
-    // jalankan query untuk melakukan pencarian data
-    koneksi.query(querySearch, req.params.ItemNumber, (err, rows, field) => {
-        // error handling
-        if (err) {
-            return res.status(500).json({ message: 'Ada kesalahan', error: err });
-        }
-
-        // jika id yang dimasukkan sesuai dengan data yang ada di db
-        if (rows.length) {
-            // jalankan query update
-            koneksi.query(queryUpdate, [data, req.params.ItemNumber], (err, rows, field) => {
-                // error handling
-                if (err) {
-                    return res.status(500).json({ message: 'Ada kesalahan', error: err });
-                }
-
-                // jika update berhasil
-                res.status(200).json({ success: true, message: 'Berhasil update data!' });
-            });
+    sql.connect().then(pool => {
+        return pool.request()
+            .input('itemNumber', sql.VarChar, itemNumber)
+            .query(querySearch);
+    }).then(result => {
+        if (result.recordset.length) {
+            const request = pool.request();
+            for (let key in data) {
+                request.input(key, sql.VarChar, data[key]);
+            }
+            return request.query(queryUpdate);
         } else {
-            return res.status(404).json({ message: 'Data tidak ditemukan!', success: false });
+            res.status(404).json({ message: 'Data tidak ditemukan!', success: false });
         }
+    }).then(result => {
+        res.status(200).json({ success: true, message: 'Berhasil update data!' });
+    }).catch(err => {
+        res.status(500).json({ message: 'Ada kesalahan', error: err });
     });
 });
 
-// delete data
 app.delete('/api/spms/:ItemNumber', (req, res) => {
-    // buat query sql untuk mencari data dan hapus
-    const querySearch = 'SELECT * FROM sparepart WHERE ItemNumber = ?';
-    const queryDelete = 'DELETE FROM sparepart WHERE ItemNumber = ?';
-    console.log(queryDelete);
-    // jalankan query untuk melakukan pencarian data
-    koneksi.query(querySearch, req.params.ItemNumber, (err, rows, field) => {
-        // error handling
-        if (err) {
-            return res.status(500).json({ message: 'Ada kesalahan', error: err });
-        }
+    const itemNumber = req.params.ItemNumber;
+    const querySearch = 'SELECT * FROM SparepartPlant5 WHERE ItemNumber = @itemNumber';
+    const queryDelete = 'DELETE FROM SparepartPlant5 WHERE ItemNumber = @itemNumber';
 
-        // jika id yang dimasukkan sesuai dengan data yang ada di db
-        if (rows.length) {
-            // jalankan query delete
-            koneksi.query(queryDelete, req.params.ItemNumber, (err, rows, field) => {
-                // error handling
-                if (err) {
-                    return res.status(500).json({ message: 'Ada kesalahan', error: err });
-                }
-
-                // jika delete berhasil
-                res.status(200).json({ success: true, message: 'Berhasil hapus data!' });
-            });
+    sql.connect().then(pool => {
+        return pool.request()
+            .input('itemNumber', sql.VarChar, itemNumber)
+            .query(querySearch);
+    }).then(result => {
+        if (result.recordset.length) {
+            return pool.request()
+                .input('itemNumber', sql.VarChar, itemNumber)
+                .query(queryDelete);
         } else {
-            return res.status(404).json({ message: 'Data tidak ditemukan!', success: false });
+            res.status(404).json({ message: 'Data tidak ditemukan!', success: false });
         }
+    }).then(result => {
+        res.status(200).json({ success: true, message: 'Berhasil hapus data!' });
+    }).catch(err => {
+        res.status(500).json({ message: 'Ada kesalahan', error: err });
     });
 });
-//---------------------------------API SPAREPART ALL---------------------------------//
 
 // buat server nya
 app.listen(PORT, () => console.log(`Server running at port: ${PORT}`));

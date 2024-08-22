@@ -1,15 +1,31 @@
-const mysql = require('mysql');
+const sql = require('mssql');
+
 // buat konfigurasi koneksi
-const koneksi = mysql.createConnection({
-    host: '34.71.7.30',
-    user: 'root',
-    password: '283010Roni',
-    database: 'sir',
-    multipleStatements: true
-});
+const koneksi = {
+    user: 'roni@ipg',
+    password: 'AutoCasting',
+    server: '192.168.2.1', // server IP address
+    port: 1433, // change port to 5000
+    database: 'Plant5',
+    options: {
+        encrypt: false, // Disable encryption if SSL is not required
+        trustServerCertificate: true // Ignore server certificate validation (use with caution)
+    },
+    pool: {
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 30000
+    }
+};
+
 // koneksi database
-koneksi.connect((err) => {
-    if (err) throw err;
-    console.log('MySQL Connected...');
+sql.connect(koneksi).then(pool => {
+    if (pool.connected) {
+        console.log('MSSQL Connected...');
+        return pool;
+    }
+}).catch(err => {
+    console.error('Database connection failed:', err);
 });
-module.exports = koneksi;
+
+module.exports = sql;
